@@ -1,7 +1,7 @@
 import redis from '../config/redis.js';
 
 const FLOOR_CACHE_KEY = 'FLOOR_DATA_LATEST';
-const CACHE_TTL = 3600; // 1 hour in seconds
+const CACHE_TTL = 3600; 
 
 // Get floor data from Redis cache
 export const getFloorData = async () => {
