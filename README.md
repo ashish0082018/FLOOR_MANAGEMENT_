@@ -27,282 +27,99 @@ A comprehensive room and booking management system with offline support, conflic
 
 ### 1. Conflict Resolution System
 
-The system uses **Optimistic Concurrency Control** with version tracking to handle concurrent updates by Admin users.
-
-#### How It Works
-
-1. **Version Tracking**: Each floor has a `currentVersion` that increments on every update. Users maintain `lastSyncedVersion`.
-
-2. **Conflict Detection**: When an Admin updates a room:
-   - Compares `adminLastSyncVersion` with `floor.currentVersion`
-   - If versions match → Update proceeds
-   - If versions mismatch → Conflict check begins
-
-3. **Smart Conflict Detection**: 
-   - Fetches original room data from `FloorHistory` at the Admin's sync version
-   - Compares only the fields being updated
-   - **Real Conflict**: Server value ≠ Admin's original view AND ≠ Admin's new value
-   - **Merge Safe**: Server value = Admin's original view (safe to merge)
-
-4. **Resolution Options**:
-   - **Accept Server**: Sync to latest version, discard local changes
-   - **Accept My Response**: Force update with local changes
-
-#### Code Snippet
+Uses **Optimistic Concurrency Control** with version tracking. When an Admin updates a room, the system compares their `lastSyncedVersion` with the floor's `currentVersion`. If versions match, the update proceeds. If not, it checks for real conflicts by comparing field values with the original data from `FloorHistory`. Only actual conflicts (where server and client values differ from the original) trigger a conflict modal. Safe merges proceed automatically.
 
 ```javascript
-// Server-side conflict detection (RoomService.js)
-async updateRoomAdmin(roomId, updates, adminLastSyncVersion, userId) {
-    // Check version
-    if (adminLastSyncVersion === currentVersion) {
-        // No conflict - proceed with update
-        return await tx.room.update({ where: { id: roomId }, data: updates });
+// Conflict detection logic
+if (adminLastSyncVersion === currentVersion) {
+    // No conflict - update proceeds
+} else {
+    // Check if server value changed from original
+    if (serverValue !== originalValue && serverValue !== clientValue) {
+        // Real conflict - show resolution modal
+    } else {
+        // Merge safe - proceed with update
     }
-    
-    // Version mismatch - check for real conflicts
-    const originalRoom = historyEntry?.data?.rooms?.find(r => r.id === roomId);
-    
-    Object.keys(updates).forEach(key => {
-        const serverValue = room[key];
-        const originalValue = originalRoom?.[key];
-        
-        // Real conflict: DB changed AND different from client's new value
-        if (serverValue !== originalValue && serverValue !== clientValue) {
-            serverFields[key] = serverValue;
-            clientFields[key] = clientValue;
-            hasConflict = true;
-        }
-    });
-    
-    if (hasConflict) {
-        throw { statusCode: 409, serverFields, clientFields };
-    }
-    
-    // Merge safe - proceed with update
 }
-```
-
-**Flow Diagram:**
-```
-Admin Updates Room
-    ↓
-Check Version Match?
-    ├─ Yes → Update Room → Increment Version → Update User's lastSyncedVersion
-    └─ No → Fetch Original Data from History
-            ↓
-        Compare Fields
-            ├─ Real Conflict → Return 409 → Show Conflict Modal
-            └─ Merge Safe → Update Room → Increment Version
 ```
 
 ---
 
 ### 2. Offline Sync Mechanism
 
-The system supports **offline-first architecture** for Admin and Super Admin roles, allowing room management operations to work without internet connectivity.
-
-#### How It Works
-
-1. **Request Interception**: Axios interceptor detects offline status and queues write operations (POST, PATCH, DELETE).
-
-2. **Local Storage Queue**: Offline actions are stored in `localStorage` with metadata:
-   - Action type (POST, PATCH, DELETE)
-   - Endpoint URL
-   - Payload data
-   - Timestamp
-
-3. **Automatic Sync**: When connection is restored:
-   - Processes queue sequentially
-   - Reconstructs requests with proper headers and credentials
-   - Handles conflicts if detected
-   - Removes successful actions from queue
-
-4. **Conflict Handling**: If a conflict is detected during sync:
-   - Stops queue processing
-   - Shows conflict resolution modal
-   - Allows user to resolve before continuing
-
-#### Code Snippet
+For Admin and Super Admin roles, write operations (POST, PATCH, DELETE) are automatically queued in `localStorage` when offline. When connection is restored, the queue is processed sequentially. If a conflict is detected during sync, processing stops and a conflict resolution modal is shown.
 
 ```javascript
-// Offline Interceptor (offlineInterceptor.js)
-api.interceptors.request.use((config) => {
-    // Skip queueing for GET requests
-    if (config.method === 'get') return config;
-    
-    // If offline, queue the request
-    if (!navigator.onLine) {
-        const action = {
-            type: config.method.toUpperCase(),
-            endpoint: config.url,
-            payload: config.data || {},
-            headers: config.headers
-        };
-        
-        addToQueue(action);
-        return Promise.reject({ isOffline: true });
-    }
-    
-    return config;
-});
+// Offline interceptor queues requests
+if (!navigator.onLine) {
+    addToQueue({ type, endpoint, payload });
+    return Promise.reject({ isOffline: true });
+}
 
-// Sync Service (syncService.js)
-export const processOfflineQueue = async (onConflict) => {
-    const queue = getQueue();
-    
-    for (const action of queue) {
-        try {
-            // Reconstruct request with proper config
-            const config = {
-                method: action.type.toLowerCase(),
-                url: action.endpoint,
-                data: action.payload,
-                headers: { 'Content-Type': 'application/json', ...action.headers },
-                withCredentials: true
-            };
-            
-            const response = await api.request(config);
-            removeFromQueue(action.id); // Success
-            
-            // Handle 409 conflict
-            if (error.response?.status === 409) {
-                onConflict({ action, ...error.response.data });
-                break; // Stop processing
-            }
-        } catch (error) {
-            // Handle errors...
-        }
+// Sync service processes queue when online
+for (const action of queue) {
+    await api.request(reconstructConfig(action));
+    if (error.status === 409) {
+        onConflict(); // Stop and show modal
+        break;
     }
-};
-```
-
-**Flow Diagram:**
-```
-User Action (Offline)
-    ↓
-Axios Interceptor Detects Offline
-    ↓
-Queue Action in localStorage
-    ↓
-Connection Restored
-    ↓
-Process Queue Sequentially
-    ├─ Success → Remove from Queue
-    ├─ Conflict → Show Modal → Resolve
-    └─ Error → Keep in Queue / Remove
+}
 ```
 
 ---
 
 ### 3. Booking Recommendation & Booking System
 
-An intelligent system that recommends rooms based on capacity requirements and booking history.
-
-#### How It Works
-
-1. **Recommendation Algorithm**:
-   - **Capacity Score**: `100 - (RoomCapacity - RequiredCapacity)`
-     - Closer capacity match = higher score
-   - **History Score**: `PastBookingsCount × 5`
-     - More past bookings = higher preference
-   - **Total Score**: `Capacity Score + History Score`
-   - Rooms sorted by highest score
-
-2. **Booking Process**:
-   - Checks room availability (status must be ACTIVE)
-   - Uses database transactions for atomicity
-   - Archives floor state before booking
-   - Updates room status to BOOKED
-   - Creates booking record
-   - Increments floor version
-   - Invalidates cache
-
-3. **Concurrency Protection**:
-   - Transaction-based booking prevents double-booking
-   - Status check happens within transaction
-   - If room becomes unavailable, returns 409 Conflict
-
-#### Code Snippet
+Rooms are recommended based on **capacity match** and **booking history**. The algorithm calculates: `Capacity Score (100 - capacity difference) + History Score (past bookings × 5)`. Rooms are sorted by total score. Booking uses database transactions to prevent double-booking and ensures atomicity.
 
 ```javascript
-// Recommendation Algorithm (BookingService.js)
-async getRecommendations(userId, requiredCapacity) {
-    const rooms = await prisma.room.findMany({
-        where: { status: 'ACTIVE' },
-        include: {
-            bookings: {
-                where: { userId, endTime: { not: null } } // Past bookings
-            }
-        }
-    });
-    
-    // Filter by capacity
-    const suitableRooms = rooms.filter(room => 
-        room.capacity >= requiredCapacity
-    );
-    
-    // Calculate scores
-    const scoredRooms = suitableRooms.map(room => {
-        const capacityScore = 100 - (room.capacity - requiredCapacity);
-        const historyScore = room.bookings.length * 5;
-        const totalScore = capacityScore + historyScore;
-        
-        return { ...room, capacityScore, historyScore, totalScore };
-    });
-    
-    // Sort by highest score
-    return scoredRooms.sort((a, b) => b.totalScore - a.totalScore);
-}
+// Recommendation scoring
+const capacityScore = 100 - (room.capacity - requiredCapacity);
+const historyScore = pastBookingsCount * 5;
+const totalScore = capacityScore + historyScore;
 
-// Booking with Transaction (BookingService.js)
-async bookRoom(userId, roomId, participants = 1) {
-    return await prisma.$transaction(async (tx) => {
-        // Check room status within transaction
-        const room = await tx.room.findUnique({
-            where: { id: roomId },
-            include: { floor: true }
-        });
-        
-        if (room.status === 'BOOKED' || room.status === 'UNDER_MAINTENANCE') {
-            throw { statusCode: 409, message: 'Room is no longer available' };
-        }
-        
-        // Archive floor state
-        await this._archiveFloor(room.floorId, userId, tx);
-        
-        // Update room status
-        await tx.room.update({
-            where: { id: roomId },
-            data: { status: 'BOOKED' }
-        });
-        
-        // Create booking
-        await tx.booking.create({
-            data: { userId, roomId, participants, startTime: new Date() }
-        });
-        
-        // Increment version
-        await this._incrementVersion(room.floorId, userId, tx);
-    });
-}
+// Transaction-based booking
+await prisma.$transaction(async (tx) => {
+    const room = await tx.room.findUnique({ where: { id: roomId } });
+    if (room.status === 'BOOKED') throw { statusCode: 409 };
+    await tx.room.update({ data: { status: 'BOOKED' } });
+});
 ```
 
-**Flow Diagram:**
-```
-Employee Requests Recommendations
-    ↓
-Filter Rooms (Capacity >= Required)
-    ↓
-Calculate Scores (Capacity + History)
-    ↓
-Sort by Total Score
-    ↓
-Display Top Recommendations
-    ↓
-User Selects Room
-    ↓
-Transaction: Check Status → Book → Archive → Increment Version
-```
+---
+
+## 👥 Role Permissions
+
+### Super Admin Role
+
+| Action | Permission |
+|--------|-----------|
+| Create / Delete / Update Room | ✅ Allowed (Room can be deleted only if room is NOT booked) |
+| Add / Reduce Seat Capacity | ✅ Allowed |
+| Free the Room (force free) | ✅ Allowed |
+| Booking a Seat | ❌ Not primary role, but can free room if needed |
+| Offline Requests Support | ✅ Allowed (queued when offline) |
+
+### Admin Role
+
+| Action | Permission |
+|--------|-----------|
+| Change Room Name & Type | ✅ Allowed |
+| Conflict Resolution | 🟡 Allowed (Admin can see conflict & select which version to keep) |
+| Merge Process | 🟡 Allowed (Admin resolves merged fields if multiple edits occur) |
+| Free Room | ❌ Not allowed |
+| Booking a Seat | ❌ Not allowed |
+| Offline Requests Support | ✅ Allowed (changes queued when offline) |
+
+### Employee Role
+
+| Action | Permission |
+|--------|-----------|
+| Book a Room / Seat | ✅ Allowed |
+| Suggest Best Room | ⚙️ Based on required capacity and most frequently booked by employee |
+| Free Room | ✅ Free the room of own (only super_admin can also do) |
+| Change Room / Seat | ❌ Not allowed |
+| Offline Requests Support | ❌ Not allowed |
 
 ---
 
@@ -331,21 +148,101 @@ npm run dev
 
 ---
 
+## ⚖️ Trade-offs in the System
+
+### 1. Floor History Archiving
+**Decision**: Archive complete floor state to `FloorHistory` on every update operation.
+
+**Trade-off**: 
+- ✅ **Pros**: Complete audit trail, enables conflict resolution by fetching original data
+- ❌ **Cons**: Increased database storage (JSON blobs), slower write operations
+
+**Rationale**: Essential for conflict resolution - Admin needs to see what the room looked like at their sync version. Storage cost is acceptable for data integrity.
+
+---
+
+### 2. Redis Caching Strategy
+**Decision**: Cache floor data with 1-hour TTL, invalidate on every write operation.
+
+**Trade-off**:
+- ✅ **Pros**: Fast reads for users with matching versions, reduces database load
+- ❌ **Cons**: Cache invalidation on every write reduces hit rate, requires Redis infrastructure
+
+**Rationale**: Most users will have matching versions (cached), providing significant performance gains. Invalidation ensures consistency at the cost of cache efficiency.
+
+---
+
+### 3. Transaction Timeouts
+**Decision**: Set `maxWait: 10000ms` and `timeout: 20000ms` for all transactions.
+
+**Trade-off**:
+- ✅ **Pros**: Prevents indefinite locks, ensures system responsiveness
+- ❌ **Cons**: Complex operations may timeout, requires retry logic
+
+**Rationale**: Balances data consistency (via transactions) with system availability. Timeouts prevent deadlocks while allowing sufficient time for normal operations.
+
+---
+
+### 4. Offline Queue in localStorage
+**Decision**: Store offline actions in browser's localStorage instead of IndexedDB.
+
+**Trade-off**:
+- ✅ **Pros**: Simple implementation, synchronous access, no async overhead
+- ❌ **Cons**: Storage limit (~5-10MB), synchronous operations can block UI
+
+**Rationale**: For typical use cases, localStorage capacity is sufficient. Simplicity outweighs storage limitations for this application scale.
+
+---
+
+### 5. Sequential Queue Processing
+**Decision**: Process offline queue sequentially with 100ms delay between requests.
+
+**Trade-off**:
+- ✅ **Pros**: Prevents server overload, easier error handling, maintains request order
+- ❌ **Cons**: Slower sync for large queues, not optimal for parallel-capable operations
+
+**Rationale**: Reliability and server stability are prioritized over speed. Sequential processing ensures conflicts are detected in order and prevents overwhelming the server.
+
+---
+
+### 6. Version Tracking for All Users
+**Decision**: Maintain `lastSyncedVersion` for all users, not just Admins.
+
+**Trade-off**:
+- ✅ **Pros**: Enables version-aware dashboard loading, shows outdated data warnings
+- ❌ **Cons**: Additional database field, version sync overhead for all users
+
+**Rationale**: Provides better UX by showing when data is outdated. Minimal overhead for significant user experience improvement.
+
+---
+
+### 7. Cache Invalidation on Every Write
+**Decision**: Invalidate Redis cache after every room update/delete/booking.
+
+**Trade-off**:
+- ✅ **Pros**: Guarantees data consistency, prevents stale data issues
+- ❌ **Cons**: Low cache hit rate for frequently updated floors, increased database queries
+
+**Rationale**: Data consistency is critical for room availability. Better to have accurate data than fast but potentially incorrect cached data.
+
+---
+
+### 8. Conflict Resolution Complexity
+**Decision**: Implement field-level conflict detection with history lookup.
+
+**Trade-off**:
+- ✅ **Pros**: Smart merging (only real conflicts trigger modal), better UX
+- ❌ **Cons**: Complex logic, additional database queries, higher maintenance cost
+
+**Rationale**: Reduces user friction by only showing conflicts when necessary. The complexity is justified by improved user experience and data integrity.
+
+---
+
 ## 🏗️ Architecture
 
 - **Role-Based Access**: SUPER_ADMIN, ADMIN, EMPLOYEE
 - **Version Control**: Floor versioning with history tracking
-- **Caching**: Redis for floor data caching
+- **Caching**: Redis for floor data caching (1-hour TTL)
 - **Offline Support**: Local storage queue for write operations
-- **Conflict Resolution**: Optimistic concurrency control
-
----
-
-## 📝 Notes
-
-- Super Admins can create, update, and delete rooms
-- Admins can update rooms (name, type only) with conflict resolution
-- Employees can book and free rooms
-- All room updates increment floor version and archive previous state
-- Cache invalidation ensures data consistency
+- **Conflict Resolution**: Optimistic concurrency control with field-level detection
 

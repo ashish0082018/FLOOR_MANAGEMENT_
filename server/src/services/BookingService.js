@@ -1,7 +1,7 @@
 import prisma from '../config/db.js';
 import { getFloorData, setFloorData, invalidateFloorCache } from '../utils/cacheUtils.js';
 
-// Booking service class with OOPS structure
+
 class BookingService {
     // Get dashboard data (cached)
     async getDashboard() {
