@@ -150,91 +150,11 @@ npm run dev
 
 ## ⚖️ Trade-offs in the System
 
-### 1. Floor History Archiving
-**Decision**: Archive complete floor state to `FloorHistory` on every update operation.
+1. **Implement transactions to maintain data integrity** - All write operations (create, update, delete, book, free) use database transactions to ensure atomicity and prevent data inconsistencies.
 
-**Trade-off**: 
-- ✅ **Pros**: Complete audit trail, enables conflict resolution by fetching original data
-- ❌ **Cons**: Increased database storage (JSON blobs), slower write operations
+2. **For speed use caching, to access the floor plan instantly without hitting the database** - Redis caching with 1-hour TTL provides fast access to floor data for users with matching versions, reducing database load.
 
-**Rationale**: Essential for conflict resolution - Admin needs to see what the room looked like at their sync version. Storage cost is acceptable for data integrity.
-
----
-
-### 2. Redis Caching Strategy
-**Decision**: Cache floor data with 1-hour TTL, invalidate on every write operation.
-
-**Trade-off**:
-- ✅ **Pros**: Fast reads for users with matching versions, reduces database load
-- ❌ **Cons**: Cache invalidation on every write reduces hit rate, requires Redis infrastructure
-
-**Rationale**: Most users will have matching versions (cached), providing significant performance gains. Invalidation ensures consistency at the cost of cache efficiency.
-
----
-
-### 3. Transaction Timeouts
-**Decision**: Set `maxWait: 10000ms` and `timeout: 20000ms` for all transactions.
-
-**Trade-off**:
-- ✅ **Pros**: Prevents indefinite locks, ensures system responsiveness
-- ❌ **Cons**: Complex operations may timeout, requires retry logic
-
-**Rationale**: Balances data consistency (via transactions) with system availability. Timeouts prevent deadlocks while allowing sufficient time for normal operations.
-
----
-
-### 4. Offline Queue in localStorage
-**Decision**: Store offline actions in browser's localStorage instead of IndexedDB.
-
-**Trade-off**:
-- ✅ **Pros**: Simple implementation, synchronous access, no async overhead
-- ❌ **Cons**: Storage limit (~5-10MB), synchronous operations can block UI
-
-**Rationale**: For typical use cases, localStorage capacity is sufficient. Simplicity outweighs storage limitations for this application scale.
-
----
-
-### 5. Sequential Queue Processing
-**Decision**: Process offline queue sequentially with 100ms delay between requests.
-
-**Trade-off**:
-- ✅ **Pros**: Prevents server overload, easier error handling, maintains request order
-- ❌ **Cons**: Slower sync for large queues, not optimal for parallel-capable operations
-
-**Rationale**: Reliability and server stability are prioritized over speed. Sequential processing ensures conflicts are detected in order and prevents overwhelming the server.
-
----
-
-### 6. Version Tracking for All Users
-**Decision**: Maintain `lastSyncedVersion` for all users, not just Admins.
-
-**Trade-off**:
-- ✅ **Pros**: Enables version-aware dashboard loading, shows outdated data warnings
-- ❌ **Cons**: Additional database field, version sync overhead for all users
-
-**Rationale**: Provides better UX by showing when data is outdated. Minimal overhead for significant user experience improvement.
-
----
-
-### 7. Cache Invalidation on Every Write
-**Decision**: Invalidate Redis cache after every room update/delete/booking.
-
-**Trade-off**:
-- ✅ **Pros**: Guarantees data consistency, prevents stale data issues
-- ❌ **Cons**: Low cache hit rate for frequently updated floors, increased database queries
-
-**Rationale**: Data consistency is critical for room availability. Better to have accurate data than fast but potentially incorrect cached data.
-
----
-
-### 8. Conflict Resolution Complexity
-**Decision**: Implement field-level conflict detection with history lookup.
-
-**Trade-off**:
-- ✅ **Pros**: Smart merging (only real conflicts trigger modal), better UX
-- ❌ **Cons**: Complex logic, additional database queries, higher maintenance cost
-
-**Rationale**: Reduces user friction by only showing conflicts when necessary. The complexity is justified by improved user experience and data integrity.
+3. **Archive complete floor state on every update for conflict resolution** - The system stores complete floor snapshots (JSON blobs) in `FloorHistory` on every operation. This trades database storage and write performance for the ability to resolve conflicts by comparing original data with current state.
 
 ---
 
