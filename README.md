@@ -125,10 +125,6 @@ await prisma.$transaction(async (tx) => {
 
 ## 📋 Setup Instructions
 
-### Prerequisites
-- Node.js 18+
-- PostgreSQL
-- Redis
 
 ### Backend Setup
 ```bash
