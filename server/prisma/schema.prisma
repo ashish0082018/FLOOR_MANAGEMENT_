@@ -1,0 +1,83 @@
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  EMPLOYEE
+}
+
+enum RoomStatus {
+  ACTIVE            
+  UNDER_MAINTENANCE 
+  BOOKED            
+}
+
+
+
+model User {
+  id                Int      @id @default(autoincrement())
+  name              String
+  email             String   @unique
+  password          String
+  role              Role     @default(EMPLOYEE)
+  lastSyncedVersion Int?     @default(0)
+  createdAt         DateTime @default(now())
+  bookings          Booking[]
+  updates           FloorHistory[] 
+}
+
+model Floor {
+  id             Int      @id @default(1)
+  name           String   @default("Main Floor")
+  currentVersion Int      @default(1) 
+  updatedAt      DateTime @updatedAt
+  rooms          Room[]
+}
+
+model Room {
+  id          String     @id 
+  name        String
+  type        String   
+  capacity    Int
+  status      RoomStatus @default(ACTIVE)
+  floorId     Int
+  floor       Floor      @relation(fields: [floorId], references: [id])
+  bookings    Booking[]
+  @@index([status, capacity]) 
+}
+
+model Booking {
+  id           Int       @id @default(autoincrement())
+  userId       Int
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roomId       String
+  room         Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  startTime    DateTime  @default(now())
+  endTime      DateTime? // NULL = Active. Date = History.
+  participants Int       @default(1)
+  @@index([userId, roomId]) 
+  
+  @@index([roomId, endTime])
+}
+
+model FloorHistory {
+  id          Int      @id @default(autoincrement())
+  floorId     Int
+  version     Int     
+  data        Json     
+  archivedAt  DateTime @default(now())
+
+  updatedById Int?
+  updatedBy   User?    @relation(fields: [updatedById], references: [id])
+
+  @@index([floorId, version])
+}
