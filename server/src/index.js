@@ -4,9 +4,8 @@ import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import prisma from './config/db.js';
 import redis from './config/redis.js';
-import { errorHandler } from './middlewares/errorMiddleware.js';
 
-// Import routes
+
 import authRoutes from './routes/authRoutes.js';
 import roomRoutes from './routes/roomRoutes.js';
 import bookingRoutes from './routes/bookingRoutes.js';
@@ -24,12 +23,11 @@ app.use(express.json());
 app.use(cookieParser());
 
 
-// Routes
+
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/bookings', bookingRoutes);
-// Error handling middleware (must be last)
-app.use(errorHandler);
+
 
 // Initialize Floor on startup
 async function initializeFloor() {
@@ -46,10 +44,10 @@ async function initializeFloor() {
                     currentVersion: 1
                 }
             });
-            console.log('✅ Floor initialized successfully');
+            console.log('Floor initialized successfully');
         }
     } catch (error) {
-        console.error('❌ Error initializing floor:', error);
+        console.error('Error initializing floor:', error);
     }
 }
 
