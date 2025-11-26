@@ -3,7 +3,7 @@ import { getFloorData, setFloorData } from '../utils/cacheUtils.js';
 
 // Floor service class for version management
 class FloorService {
-    // Get dashboard data based on user's last synced version
+    // Get dashboard data based on user's(super_admin and admin) last synced version
     async getDashboardData(userId) {
         const user = await prisma.user.findUnique({
             where: { id: userId },
@@ -19,7 +19,7 @@ class FloorService {
             throw new Error('Floor not found');
         }
 
-        const userVersion = user?.lastSyncedVersion || 0;
+        const userVersion = user.lastSyncedVersion || 0;
         const currentVersion = floor.currentVersion;
 
         // Case A: Versions match - use cache or DB

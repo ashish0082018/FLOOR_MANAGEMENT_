@@ -13,36 +13,28 @@ const ConflictResolutionModal = ({ isOpen, serverRoom, serverFields, clientField
                 </div>
 
                 <div className="grid grid-cols-2 gap-6 mb-6">
+                    {/* SERVER DATA COLUMN */}
                     <div>
                         <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
                             <span className="text-gray-500">Server Data</span>
                         </h3>
                         <div className="bg-gray-50 border-2 border-gray-200 p-5 rounded-xl space-y-3">
-                            <div className="flex items-center gap-2">
-                                <span className="text-gray-600 font-semibold w-20">Name:</span>
-                                <span className="text-gray-800">{serverRoom?.name}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <span className="text-gray-600 font-semibold w-20">Type:</span>
-                                <span className="text-gray-800">{serverRoom?.type}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <span className="text-gray-600 font-semibold w-20">Capacity:</span>
-                                <span className="text-gray-800">{serverRoom?.capacity}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <span className="text-gray-600 font-semibold w-20">Status:</span>
-                                <span className="text-gray-800">{serverRoom?.status}</span>
-                            </div>
+                            {/* CHANGED: Removed hardcoded fields. Now only mapping serverFields */}
                             {Object.keys(serverFields || {}).map(key => (
-                                <div key={key} className="flex items-center gap-2 pt-2 border-t border-gray-300">
+                                <div key={key} className="flex items-center gap-2">
                                     <span className="text-gray-600 font-semibold w-20 capitalize">{key}:</span>
                                     <span className="text-gray-800">{serverFields[key]}</span>
                                 </div>
                             ))}
+                            
+                            {/* Fallback if serverFields is empty (rare edge case) */}
+                            {Object.keys(serverFields || {}).length === 0 && (
+                                <p className="text-gray-400 italic">No conflicting data to show</p>
+                            )}
                         </div>
                     </div>
 
+                    {/* CLIENT DATA COLUMN */}
                     <div>
                         <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
                             <span className="text-blue-600">Your Data</span>
@@ -82,4 +74,3 @@ const ConflictResolutionModal = ({ isOpen, serverRoom, serverFields, clientField
 };
 
 export default ConflictResolutionModal;
-

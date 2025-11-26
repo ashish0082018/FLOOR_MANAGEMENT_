@@ -65,7 +65,6 @@ model Booking {
   endTime      DateTime? // NULL = Active. Date = History.
   participants Int       @default(1)
   @@index([userId, roomId]) 
-  
   @@index([roomId, endTime])
 }
 

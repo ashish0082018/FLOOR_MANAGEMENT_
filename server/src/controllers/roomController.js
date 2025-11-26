@@ -99,26 +99,14 @@ export const deleteRoom = async (req, res, next) => {
             message: 'Room deleted successfully',
             ...result
         });
+
     } catch (error) {
-        if (error.statusCode === 410) {
-            // Room already deleted in latest version
-            return res.status(410).json({
-                success: false,
-                message: error.message,
-                roomDeleted: true,
-                currentVersion: error.currentVersion
-            });
-        }
-        if (error.statusCode === 409) {
-            return res.status(409).json({
-                success: false,
-                message: error.message,
-                isBooked: error.isBooked
-            });
-        }
-        return res.status(400).json({
+       const statusCode = error.statusCode || 400;
+
+        return res.status(statusCode).json({
             success: false,
-            message: error.message || 'Failed to delete room'
+            message: error.message || 'Failed to delete room',
+            ...error 
         });
     }
 };
@@ -128,7 +116,6 @@ export const updateRoom = async (req, res, next) => {
     try {
         const { roomId } = req.params;
         const { updates, force, adminLastSyncVersion } = req.body;
-
         if (!updates || Object.keys(updates).length === 0) {
             return res.status(400).json({
                 success: false,
@@ -145,7 +132,9 @@ export const updateRoom = async (req, res, next) => {
                 message: 'Room updated successfully',
                 room: result
             });
-        } else if (req.user.role === 'ADMIN') {
+        } 
+
+        else if (req.user.role === 'ADMIN') {
             if (!adminLastSyncVersion) {
                 return res.status(400).json({
                     success: false,
@@ -160,48 +149,20 @@ export const updateRoom = async (req, res, next) => {
                 message: 'Room updated successfully',
                 room: result.room
             });
-        } else {
+        } 
+        
+        else {
             return res.status(403).json({
                 success: false,
                 message: 'Access denied. Only Admin and Super Admin can update rooms'
             });
         }
     } catch (error) {
-        if (error.statusCode === 410) {
-            // Room already deleted in latest version
-            return res.status(410).json({
-                success: false,
-                message: error.message,
-                roomDeleted: true,
-                currentVersion: error.currentVersion
-            });
-        }
-        if (error.statusCode === 409) {
-            return res.status(409).json({
-                success: false,
-                message: error.message,
-                serverFields: error.serverFields,
-                clientFields: error.clientFields,
-                serverRoom: error.serverRoom,
-                currentVersion: error.currentVersion,
-                isBooked: error.isBooked
-            });
-        }
-        if (error.statusCode === 403) {
-            return res.status(403).json({
-                success: false,
-                message: error.message
-            });
-        }
-        if (error.statusCode === 400) {
-            return res.status(400).json({
-                success: false,
-                message: error.message
-            });
-        }
-        return res.status(500).json({
+       const statusCode = error.statusCode || 500;
+        return res.status(statusCode).json({
             success: false,
-            message: error.message || 'Failed to update room'
+            message: error.message || 'Failed to update room',
+            ...error 
         });
     }
 };

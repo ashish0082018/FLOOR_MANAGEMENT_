@@ -3,7 +3,7 @@ import { getFloorData, setFloorData, invalidateFloorCache } from '../utils/cache
 
 
 class BookingService {
-    // Get dashboard data (cached)
+    // Get dashboard data (for employee) (cached)
     async getDashboard() {
         let floorData = await getFloorData();
 
@@ -54,7 +54,7 @@ class BookingService {
 
     // Get room recommendations based on capacity and history
     async getRecommendations(userId, requiredCapacity) {
-        // Fetch all active rooms from DB (to ensure latest data for history calculation)
+        // Fetch all active rooms and booking of room by user , from DB (to ensure latest data for history calculation)
         const rooms = await prisma.room.findMany({
             where: {
                 status: 'ACTIVE'

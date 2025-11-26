@@ -204,24 +204,9 @@ class RoomService {
                 throw new Error('Room not found');
             }
 
-            // Prevent Super Admin from setting status to BOOKED
-            if (updates.status === 'BOOKED') {
-                throw { statusCode: 400, message: 'Cannot set room status to BOOKED. Rooms are booked through the booking system only.' };
-            }
-
-            // Check if room is booked and trying to change status
-            if (room.status === 'BOOKED' && updates.status && updates.status !== 'BOOKED') {
-                // Update user's version to latest
-                await tx.user.update({
-                    where: { id: userId },
-                    data: { lastSyncedVersion: room.floor.currentVersion }
-                });
-                throw { statusCode: 400, message: 'Room is booked. You cannot change the status.' };
-            }
-
-            // If room is booked and force is false, return conflict
-            if (room.status === 'BOOKED' && !force) {
-                throw { statusCode: 409, message: 'Room is occupied. Force Update?', isBooked: true };
+            //Check room is booked or not
+            if (room.status === 'BOOKED') {
+                throw { statusCode: 400, message: 'Room is booked. You cannot update!' };
             }
 
             // Archive current state
@@ -254,7 +239,7 @@ class RoomService {
                 where: { id: roomId },
                 include: { floor: true }
             });
-
+ console.log("here is the room config ",room)
             if (!room) {
                 throw new Error('Room not found');
             }
@@ -267,7 +252,7 @@ class RoomService {
             // Check version
             const currentVersion = room.floor.currentVersion;
 
-            // Scenario A: Versions match (No conflict)
+            // Case 1: Versions match (No conflict)
             if (adminLastSyncVersion === currentVersion) {
                 await this._archiveFloor(room.floorId, userId, tx);
 
@@ -280,7 +265,7 @@ class RoomService {
                 return { room: updatedRoom, conflict: false };
             }
 
-            // Scenario B: Versions mismatch (Conflict)
+            // Case 2: Versions mismatch (Conflict)
             // Get the original room data from history
             const historyEntry = await tx.floorHistory.findFirst({
                 where: {
@@ -290,7 +275,7 @@ class RoomService {
                 orderBy: { archivedAt: 'desc' }
             });
 
-            const originalRoom = historyEntry?.data?.rooms?.find(r => r.id === roomId);
+            const adminCurrentRoom = historyEntry?.data?.rooms?.find(r => r.id === roomId);
 
             // Compare fields for real conflicts
             const serverFields = {};
@@ -298,31 +283,25 @@ class RoomService {
             let hasConflict = false;
 
             Object.keys(updates).forEach(key => {
-                const serverValue = room[key];
-                const clientValue = updates[key];
-                const originalValue = originalRoom?.[key];
+                const serverValue = room[key];   // latest 
+                const clientValue = updates[key];  // what admin want to change
+                const originalValue = adminCurrentRoom?.[key]; // admin's version value
 
                 // Real conflict: DB value != Admin's original view
                 if (serverValue !== originalValue && serverValue !== clientValue) {
-                    serverFields[key] = serverValue;
-                    clientFields[key] = clientValue;
                     hasConflict = true;
                 }
+                if(serverValue!==clientValue){
+                      serverFields[key] = serverValue;
+                      clientFields[key] = clientValue;
+                }
             });
-
             if (hasConflict) {
                 throw {
                     statusCode: 409,
                     message: 'Conflict detected',
                     serverFields,
                     clientFields,
-                    serverRoom: {
-                        id: room.id,
-                        name: room.name,
-                        type: room.type,
-                        capacity: room.capacity,
-                        status: room.status
-                    },
                     currentVersion: currentVersion
                 };
             }
