@@ -47,6 +47,11 @@ export const getRecommendations = async (req, res, next) => {
 export const bookRoom = async (req, res, next) => {
     try {
         const { roomId, participants } = req.body;
+if(req.user.role==='ADMIN' || req.user.role==='SUPER_ADMIN') {
+    throw{
+        message:"You have not access to book the room"
+    }
+}
 
         if (!roomId) {
             return res.status(400).json({
