@@ -6,7 +6,7 @@ const isOnline = () => {
     return navigator.onLine;
 };
 
-// Setup offline interceptor for axios
+
 export const setupOfflineInterceptor = () => {
     // Request interceptor to queue requests when offline
     api.interceptors.request.use(

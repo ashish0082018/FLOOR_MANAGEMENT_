@@ -39,11 +39,10 @@ export const processOfflineQueue = async (onConflict) => {
             const response = await api.request(config);
 
             // Success - remove from queue
-            console.log('Successfully synced action:', action.id);
             removeFromQueue(action.id);
             processed++;
 
-            // Update UI if needed
+            
             if (response.data?.success) {
                 toast.success('Synced: ' + (action.endpoint || 'action'));
             }
@@ -57,7 +56,7 @@ export const processOfflineQueue = async (onConflict) => {
                 responseData: error.response?.data
             });
 
-            // Handle network errors (connection reset, network errors, etc.)
+           
             if (!error.response && (error.code === 'ERR_NETWORK' || error.code === 'ERR_CONNECTION_RESET' || error.message?.includes('ERR_CONNECTION_RESET'))) {
                 // Network error - keep in queue and stop processing
                 console.error('Network error during sync - keeping action in queue:', action.id);
